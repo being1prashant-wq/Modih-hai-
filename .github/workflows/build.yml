@@ -34,35 +34,27 @@ jobs:
 
           if [ -z "$APP_GRADLE" ]; then
             echo "ERROR: app/build.gradle.kts not found"
-            find extracted -maxdepth 5 -type f | head -200
+            echo "Files inside ZIP:"
+            find extracted -maxdepth 5 -type f
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$(dirname "$APP_GRADLE")")
 
-          echo "Project found:"
+          echo "Android project found at:"
           echo "$PROJECT_DIR"
 
           echo "$PROJECT_DIR" > project_dir.txt
 
-      - name: Fix Gradle repositories
+      - name: Create/fix settings.gradle.kts
         run: |
           PROJECT_DIR=$(cat project_dir.txt)
           SETTINGS="$PROJECT_DIR/settings.gradle.kts"
 
-          echo "Checking settings file:"
-          cat "$SETTINGS"
+          echo "Creating Gradle settings..."
 
-          python3 - "$SETTINGS" <<'PY'
-          import sys
-
-          path = sys.argv[1]
-
-          with open(path, "r", encoding="utf-8") as f:
-              text = f.read()
-
-          if "pluginManagement" not in text:
-              text = """pluginManagement {
+          cat > "$SETTINGS" <<'EOF'
+          pluginManagement {
               repositories {
                   google()
                   mavenCentral()
@@ -71,40 +63,30 @@ jobs:
           }
 
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
                   google()
                   mavenCentral()
               }
           }
 
-          """ + text
+          rootProject.name = "ModihMusic"
 
-          else:
-              if "google()" not in text:
-                  text = text.replace(
-                      "pluginManagement {",
-                      """pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
+          include(":app")
+          EOF
 
-          """,
-                      1
-                  )
+          echo "settings.gradle.kts created:"
+          cat "$SETTINGS"
 
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(text)
+      - name: Show project structure
+        run: |
+          PROJECT_DIR=$(cat project_dir.txt)
 
-          print("Gradle repositories patched successfully.")
-          PY
+          echo "===== PROJECT ====="
+          ls -la "$PROJECT_DIR"
 
           echo ""
-          echo "Final settings.gradle.kts:"
-          cat "$SETTINGS"
+          echo "===== APP ====="
+          ls -la "$PROJECT_DIR/app"
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -124,6 +106,7 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "Starting Gradle build..."
+
           gradle assembleDebug --stacktrace
 
       - name: Find APK
@@ -135,7 +118,7 @@ jobs:
             -name "*.apk" \
             -exec cp {} apk/ \;
 
-          echo "APK files:"
+          echo "===== APK FILES ====="
           ls -lh apk/
 
       - name: Upload APK
